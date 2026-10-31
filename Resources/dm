@@ -1,0 +1,35 @@
+#!/bin/zsh
+# Opens text and PDF files in DocMark. Usage: dm [file ...]
+# A missing file is created first if its name has an extension.
+set -eu
+
+app=${0:A:h:h:h}
+files=()
+missing=()
+
+for file in "$@"; do
+    if [[ -d $file ]]; then
+        echo "dm: $file is a folder" >&2
+        exit 1
+    elif [[ -e $file ]]; then
+        # An empty file has no contents to judge.
+        if [[ ${${file:e}:l} != pdf && -s $file && $(file -b --mime-encoding "${file:a}") == binary ]]; then
+            echo "dm: $file is neither text nor a PDF" >&2
+            exit 1
+        fi
+        files+=("${file:a}")
+    elif [[ -z ${file:e} || ${${file:e}:l} == pdf ]]; then
+        echo "dm: $file does not exist, and only text files with an extension are created" >&2
+        exit 1
+    elif [[ ! -d ${file:a:h} ]]; then
+        echo "dm: folder ${file:a:h} does not exist" >&2
+        exit 1
+    else
+        missing+=("${file:a}")
+        files+=("${file:a}")
+    fi
+done
+
+# Created only once every argument is known to be fine.
+(( ${#missing} )) && touch -- "${missing[@]}"
+exec open -a "$app" -- "${files[@]}"

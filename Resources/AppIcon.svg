@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 576" width="576" height="576">
+  <title>DocMark</title>
+  <rect width="576" height="576" rx="128" fill="#2B2B2B"/>
+  <g fill="#E4E5D8" transform="translate(64 64)">
+    <path fill-rule="evenodd" d="M96 0H288V64H352V320H96ZM160 128V160H288V128ZM160 208V240H288V208Z"/>
+    <rect x="0" y="384" width="448" height="64"/>
+  </g>
+</svg>
