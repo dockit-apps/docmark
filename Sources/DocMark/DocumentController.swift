@@ -8,6 +8,11 @@ final class DocumentController: NSDocumentController {
     static let textType = "public.plain-text"
     static let pdfType = "com.adobe.pdf"
 
+    override func addDocument(_ document: NSDocument) {
+        super.addDocument(document)
+        RecentFilesWindow.dismiss()
+    }
+
     override func typeForContents(of url: URL) throws -> String {
         let name = url.pathExtension.lowercased()
         if name == "pdf" { return Self.pdfType }

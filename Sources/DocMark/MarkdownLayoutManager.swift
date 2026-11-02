@@ -50,10 +50,6 @@ final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
             drawBlocks(in: characters, storage: storage, container: container, origin: origin)
             drawLineDecorations(in: characters, storage: storage, origin: origin)
-            storage.enumerateAttribute(.dmTable, in: characters) { value, run, _ in
-                guard let grid = value as? TableGrid else { return }
-                grid.draw(in: frame(of: grid, at: run.location, storage: storage).offsetBy(dx: origin.x, dy: origin.y))
-            }
         }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
@@ -110,13 +106,26 @@ final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             Theme.border.setFill()
             NSRect(x: origin.x + line.minX, y: origin.y + line.maxY - 3, width: line.width, height: 1).fill()
         }
-        storage.enumerateAttribute(.dmImage, in: characters) { value, run, _ in
+    }
+
+    /// Tables and images fill reserved space that holds no glyphs, so a redraw or printed page can
+    /// fall entirely inside one. They are drawn by where they are, from the text view's background.
+    func drawTablesAndImages(in rect: NSRect, origin: NSPoint, clipSlack: CGFloat = 0) {
+        guard let storage = textStorage else { return }
+        let whole = NSRange(location: 0, length: storage.length)
+        let visible = rect.offsetBy(dx: -origin.x, dy: -origin.y)
+        storage.enumerateAttribute(.dmTable, in: whole) { value, run, stop in
+            guard let grid = value as? TableGrid else { return }
+            let frame = frame(of: grid, at: run.location, storage: storage)
+            if frame.minY > visible.maxY { stop.pointee = true }
+            if frame.intersects(visible) { grid.draw(in: frame.offsetBy(dx: origin.x, dy: origin.y), clipSlack: clipSlack) }
+        }
+        storage.enumerateAttribute(.dmImage, in: whole) { value, run, stop in
             guard let image = value as? NSImage else { return }
-            let line = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: firstVisibleCharacter(from: run.location, storage: storage)), effectiveRange: nil)
-            let scale = min(1, line.width / max(image.size.width, 1))
-            let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-            let rect = NSRect(origin: NSPoint(x: origin.x + line.minX, y: origin.y + line.minY + 2), size: size)
-            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            let frame = frame(of: image, at: run.location, storage: storage)
+            if frame.minY > visible.maxY { stop.pointee = true }
+            guard frame.intersects(visible) else { return }
+            image.draw(in: frame.offsetBy(dx: origin.x, dy: origin.y), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
     }
 
@@ -130,6 +139,47 @@ final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             if location != nil { stop.pointee = true }
         }
         return location
+    }
+
+    /// How far down the content reaches. The used rect can stop short of the space reserved for a
+    /// table or image at the end of the text.
+    var contentBottom: CGFloat {
+        guard let storage = textStorage, let container = textContainers.first else { return 0 }
+        let whole = NSRange(location: 0, length: storage.length)
+        var bottom = usedRect(for: container).maxY
+        storage.enumerateAttribute(.dmTable, in: whole) { value, run, _ in
+            guard let grid = value as? TableGrid else { return }
+            bottom = max(bottom, frame(of: grid, at: run.location, storage: storage).maxY)
+        }
+        storage.enumerateAttribute(.dmImage, in: whole) { value, run, _ in
+            guard let image = value as? NSImage else { return }
+            bottom = max(bottom, frame(of: image, at: run.location, storage: storage).maxY)
+        }
+        return bottom
+    }
+
+    /// The closest place at or above `y` where a printed page can end without cutting through a
+    /// table row or an image.
+    func pageBreak(atOrAbove y: CGFloat) -> CGFloat {
+        guard let storage = textStorage else { return y }
+        let whole = NSRange(location: 0, length: storage.length)
+        var result = y
+        storage.enumerateAttribute(.dmTable, in: whole) { value, run, _ in
+            guard let grid = value as? TableGrid else { return }
+            result = min(result, grid.rowEdge(atOrAbove: y, in: frame(of: grid, at: run.location, storage: storage)))
+        }
+        storage.enumerateAttribute(.dmImage, in: whole) { value, run, _ in
+            guard let image = value as? NSImage else { return }
+            let rect = frame(of: image, at: run.location, storage: storage)
+            if rect.minY < y, y < rect.maxY { result = min(result, rect.minY) }
+        }
+        return result
+    }
+
+    private func frame(of image: NSImage, at location: Int, storage: NSTextStorage) -> NSRect {
+        let line = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: firstVisibleCharacter(from: location, storage: storage)), effectiveRange: nil)
+        let scale = min(1, line.width / max(image.size.width, 1))
+        return NSRect(x: line.minX, y: line.minY + 2, width: image.size.width * scale, height: image.size.height * scale)
     }
 
     /// A table is drawn from its first line, whose line break is the first glyph that really sits there.

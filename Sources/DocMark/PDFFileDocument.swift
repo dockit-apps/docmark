@@ -19,6 +19,13 @@ final class PDFFileDocument: NSDocument {
         addWindowController(NSWindowController(window: DocumentWindow(content: reader, focus: reader)))
     }
 
+    override func printOperation(withSettings printSettings: [NSPrintInfo.AttributeKey: Any]) throws -> NSPrintOperation {
+        guard let operation = pdf?.printOperation(for: printInfo(with: printSettings), scalingMode: .pageScaleToFit, autoRotate: true) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return prepared(operation)
+    }
+
     override func read(from data: Data, ofType typeName: String) throws {
         guard let pdf = PDFDocument(data: data) else { throw CocoaError(.fileReadCorruptFile) }
         bytes = data

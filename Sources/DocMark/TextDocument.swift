@@ -35,6 +35,13 @@ final class TextDocument: NSDocument {
         addWindowController(NSWindowController(window: window))
     }
 
+    override func printOperation(withSettings printSettings: [NSPrintInfo.AttributeKey: Any]) throws -> NSPrintOperation {
+        let info = printInfo(with: printSettings)
+        info.horizontalPagination = .fit
+        let view = PrintView(text: editor?.text ?? loadedText, syntax: syntax, documentURL: fileURL)
+        return prepared(NSPrintOperation(view: view, printInfo: info))
+    }
+
     override func read(from data: Data, ofType typeName: String) throws {
         let text = try TextFile.decode(data)
         loadedText = text

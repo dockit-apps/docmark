@@ -12,6 +12,9 @@ source, Tab moves between cells and adds a row after the last one.
 Code blocks are coloured for C, C++, Java, JavaScript, TypeScript, Swift, Python, Go, Rust, shell, SQL,
 JSON and YAML when the opening fence names the language, and in files with those extensions.
 
+Command-P prints through the system panel, which also saves PDFs. Text prints rendered, in a light
+palette for paper, and File > Export as PDF… goes straight to a file.
+
 ## Build and install
 
 ```bash
@@ -27,7 +30,7 @@ dm notes.md
 ```
 
 It opens the text and PDF files it is given and creates missing ones that have an extension. Without
-arguments it opens DocMark, which starts a new document if it wasn't running.
+arguments it opens DocMark, which lists recent files if it wasn't running.
 
 ## Test
 

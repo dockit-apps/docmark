@@ -619,3 +619,164 @@ private func scroll(_ lines: Int32, command: Bool = true, over window: NSWindow)
     view.cacheDisplay(in: view.bounds, to: rep)
     try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path + ".png"))
 }
+
+@MainActor private func printedPDF(of document: NSDocument) throws -> PDFDocument {
+    let url = try temporaryFolder().appendingPathComponent("printed.pdf")
+    let operation = try document.printOperation(withSettings: [
+        .jobDisposition: NSPrintInfo.JobDisposition.save, .jobSavingURL: url,
+    ])
+    operation.showsPrintPanel = false
+    operation.showsProgressPanel = false
+    #expect(operation.run())
+    return try #require(PDFDocument(url: url))
+}
+
+@MainActor private func textDocument(_ text: String, named name: String = "note.md") throws -> TextDocument {
+    _ = NSApplication.shared
+    NSApp.appearance = NSAppearance(named: .darkAqua)
+    let document = TextDocument()
+    document.fileURL = try temporaryFolder().appendingPathComponent(name)
+    try document.read(from: Data(text.utf8), ofType: DocumentController.markdownType)
+    return document
+}
+
+private func pixels(of page: PDFPage) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 800, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    page.thumbnail(of: NSSize(width: 600, height: 800), for: .mediaBox).draw(in: NSRect(x: 0, y: 0, width: 600, height: 800))
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+@MainActor @Test func fileMenuHasPrintExportAndOpenRecent() throws {
+    _ = NSApplication.shared
+    let file = try #require(MainMenu.make().item(withTitle: "File")?.submenu)
+    let print = try #require(file.item(withTitle: "Print…"))
+    #expect(print.keyEquivalent == "p" && print.keyEquivalentModifierMask == .command)
+    #expect(print.action == #selector(NSDocument.printDocument(_:)))
+    #expect(file.item(withTitle: "Export as PDF…")?.action == #selector(NSDocument.saveToPDF(_:)))
+    #expect(file.item(withTitle: "Open Recent")?.submenu?.delegate is RecentFilesMenu)
+}
+
+@MainActor @Test func markdownPrintsRenderedInDarkInkOnWhitePaper() throws {
+    let document = try textDocument("# Title\n\n**bold** and `code`\n\n| Left | Right |\n|---|---|\n| one | two |\n\n```swift\nlet x = 1\n```\n")
+    document.makeWindowControllers()
+    let page = try #require(printedPDF(of: document).page(at: 0))
+    let text = try #require(page.string)
+    for word in ["Title", "bold", "code", "Left", "two", "let x = 1"] { #expect(text.contains(word)) }
+    for syntax in ["#", "**", "`", "|", "---"] { #expect(!text.contains(syntax)) }
+
+    let rep = pixels(of: page)
+    #expect(rep.colorAt(x: 5, y: 5)!.brightnessComponent > 0.99)
+    var darkest: CGFloat = 1
+    var charcoal = 0
+    for y in stride(from: 0, to: 800, by: 2) {
+        for x in stride(from: 0, to: 600, by: 2) {
+            let brightness = rep.colorAt(x: x, y: y)!.brightnessComponent
+            darkest = min(darkest, brightness)
+            if brightness < 0.2 { charcoal += 1 }
+        }
+    }
+    #expect(darkest < 0.4)
+    #expect(charcoal < 800, "the screen's dark background must stay off the paper")
+
+    let window = try #require(document.windowControllers.first?.window)
+    var background: NSColor?
+    window.effectiveAppearance.performAsCurrentDrawingAppearance {
+        background = Theme.background.usingColorSpace(.sRGB)
+    }
+    #expect(try #require(background).brightnessComponent < 0.2)
+}
+
+@MainActor @Test func longTablePrintsAcrossPagesWithEveryRowOnOnePage() throws {
+    let rows = (1...150).map { "| row\($0)x | value |" }.joined(separator: "\n")
+    let printed = try printedPDF(of: textDocument("Intro\n\n| Name | Value |\n|---|---|\n\(rows)\n\nOutro\n"))
+    #expect(printed.pageCount > 1)
+    let pages = (0..<printed.pageCount).map { printed.page(at: $0)?.string ?? "" }
+    for row in 1...150 {
+        #expect(pages.filter { $0.contains("row\(row)x") }.count == 1, "row \(row)")
+    }
+    #expect(pages.last?.contains("Outro") == true)
+}
+
+@MainActor @Test func tableEndingTheFileIsPrintedWhole() throws {
+    let text = try #require(printedPDF(of: textDocument("Intro\n\n| A | B |\n|---|---|\n| first | second |\n| last | cell |")).page(at: 0)?.string)
+    #expect(text.contains("last") && text.contains("cell"))
+}
+
+@MainActor @Test func otherTextUnsavedEditsAndEmptyFilesPrint() throws {
+    #expect(try printedPDF(of: textDocument("**stays** as typed", named: "notes.txt")).page(at: 0)?.string?.contains("**stays**") == true)
+    #expect(try printedPDF(of: textDocument("")).pageCount == 1)
+    let edited = try textDocument("saved")
+    edited.makeWindowControllers()
+    let view = try #require(edited.windowControllers.first?.window?.initialFirstResponder as? NSTextView)
+    view.insertText("edited ", replacementRange: NSRange(location: 0, length: 0))
+    #expect(try printedPDF(of: edited).page(at: 0)?.string?.contains("edited saved") == true)
+    #expect(edited.pdfPrintOperation.jobTitle == edited.displayName)
+}
+
+@MainActor @Test func pdfPrintsEveryPage() throws {
+    _ = NSApplication.shared
+    let document = PDFFileDocument()
+    try document.read(from: samplePDF(["first", "second"]), ofType: DocumentController.pdfType)
+    let printed = try printedPDF(of: document)
+    #expect(printed.pageCount == 2)
+    #expect(printed.page(at: 1)?.string?.contains("second") == true)
+}
+
+/// Recent files belong to the test runner here, not to the installed app.
+@MainActor @Test func recentFilesListAndMenuSkipMissingFilesAndOpenOnLaunch() throws {
+    _ = NSApplication.shared
+    let controller = NSDocumentController.shared
+    controller.clearRecentDocuments(nil)
+    defer { controller.clearRecentDocuments(nil) }
+    let folder = try temporaryFolder()
+    let kept = folder.appendingPathComponent("kept.md"), gone = folder.appendingPathComponent("gone.md")
+    try Data().write(to: kept)
+    try Data().write(to: gone)
+    controller.noteNewRecentDocumentURL(gone)
+    controller.noteNewRecentDocumentURL(kept)
+    try FileManager.default.removeItem(at: gone)
+    #expect(controller.existingRecentURLs.map(\.lastPathComponent) == ["kept.md"])
+
+    let menu = NSMenu()
+    RecentFilesMenu().menuNeedsUpdate(menu)
+    #expect(menu.items.map(\.title) == ["kept.md", "", "Clear Menu"])
+
+    #expect(AppDelegate().applicationOpenUntitledFile(NSApp))
+    let window = try #require(RecentFilesWindow.current)
+    #expect(window.isVisible)
+    #expect(window.list.files.map(\.lastPathComponent) == ["kept.md"])
+    #expect(window.contentLayoutRect.height == window.list.preferredSize.height)
+
+    DocumentController().addDocument(TextDocument())
+    #expect(!window.isVisible, "opening any document puts the list away")
+}
+
+@MainActor @Test func recentFilesListMovesWithArrowKeysWithinItsRows() throws {
+    let list = RecentFilesList()
+    list.files = ["a.md", "b.md"].map { URL(fileURLWithPath: "/tmp/\($0)") }
+    list.moveDown(nil)
+    list.moveDown(nil)
+    #expect(list.selected == 1)
+    list.moveUp(nil)
+    list.moveUp(nil)
+    #expect(list.selected == 0)
+}
+
+/// Writes the recent files window to `$DOCMARK_RECENT_PNG`, for looking at.
+@MainActor @Test func recentFilesSnapshot() throws {
+    guard let path = ProcessInfo.processInfo.environment["DOCMARK_RECENT_PNG"] else { return }
+    _ = NSApplication.shared
+    NSApp.appearance = NSAppearance(named: .darkAqua)
+    let list = RecentFilesList()
+    list.files = ["README.md", "Syspr01ErsteSchritteInC.pdf", "a very long file name that has to be shortened somewhere in the middle.txt"]
+        .map { URL(fileURLWithPath: NSHomeDirectory() + "/development/fhnw/syspr/Solutions/01/" + $0) }
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: list.preferredSize), styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = list
+    list.moveDown(nil)
+    let rep = list.bitmapImageRepForCachingDisplay(in: list.bounds)!
+    list.cacheDisplay(in: list.bounds, to: rep)
+    try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+}

@@ -3,7 +3,11 @@ import PDFKit
 
 /// The whole menu bar, built in code. Every item targets the responder chain.
 enum MainMenu {
+    private static let recentFiles = RecentFilesMenu()
+
     static func make() -> NSMenu {
+        let openRecent = submenu("Open Recent", [])
+        openRecent.submenu?.delegate = recentFiles
         let bar = NSMenu()
         bar.addItem(submenu("DocMark", [
             item("About DocMark", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
@@ -17,6 +21,7 @@ enum MainMenu {
         bar.addItem(submenu("File", [
             item("New", #selector(NSDocumentController.newDocument(_:)), "n"),
             item("Open…", #selector(NSDocumentController.openDocument(_:)), "o"),
+            openRecent,
             .separator(),
             item("Close", #selector(NSWindow.performClose(_:)), "w"),
             item("Save", #selector(NSDocument.save(_:)), "s"),
@@ -24,6 +29,9 @@ enum MainMenu {
             item("Rename…", #selector(NSDocument.rename(_:))),
             item("Move To…", Selector(("moveDocument:"))),
             item("Revert To", #selector(NSDocument.revertToSaved(_:))),
+            .separator(),
+            item("Export as PDF…", #selector(NSDocument.saveToPDF(_:))),
+            item("Print…", #selector(NSDocument.printDocument(_:)), "p"),
         ]))
         bar.addItem(submenu("Edit", [
             item("Undo", Selector(("undo:")), "z"),

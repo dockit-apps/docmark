@@ -23,6 +23,11 @@ final class MarkdownTextView: NSTextView, ScrollZooming {
         }
     }
 
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        (layoutManager as? MarkdownLayoutManager)?.drawTablesAndImages(in: rect, origin: textContainerOrigin)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)

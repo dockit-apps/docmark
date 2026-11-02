@@ -57,7 +57,11 @@ final class TableGrid {
         return widths
     }
 
-    func draw(in frame: NSRect) {
+    /// Cells outside the clip are left out, so a printed page holds only the rows it shows. A page's
+    /// clip runs a few points past its edge, which `clipSlack` takes back.
+    func draw(in frame: NSRect, clipSlack: CGFloat = 0) {
+        let clip = NSGraphicsContext.current?.cgContext.boundingBoxOfClipPath ?? frame
+        let visible = clip.insetBy(dx: 0, dy: clipSlack)
         NSGraphicsContext.saveGraphicsState()
         let outline = NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6)
         outline.addClip()
@@ -65,6 +69,7 @@ final class TableGrid {
         NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: rowHeights.first ?? 0).fill()
         Theme.border.setFill()
         forEachCell(in: frame) { cell, rect, row, column in
+            guard rect.intersects(visible) else { return }
             if row > 0 { NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 1).fill() }
             if column > 0 { NSRect(x: rect.minX, y: rect.minY, width: 1, height: rect.height).fill() }
             cell.text.draw(
@@ -85,6 +90,14 @@ final class TableGrid {
             if rect.contains(point) { location = cell.location }
         }
         return location
+    }
+
+    /// `y` if it is outside the table, otherwise the top of the row it falls in.
+    func rowEdge(atOrAbove y: CGFloat, in frame: NSRect) -> CGFloat {
+        guard frame.minY < y, y < frame.maxY else { return y }
+        var edge = frame.minY
+        for height in rowHeights where edge + height <= y { edge += height }
+        return edge
     }
 
     private func forEachCell(in frame: NSRect, _ body: (Cell, NSRect, Int, Int) -> Void) {

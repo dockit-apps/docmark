@@ -2,25 +2,26 @@ import AppKit
 import CoreText
 import DocMarkCore
 
-/// DocShelf's Shelf theme: charcoal and cream with a calm sage accent.
+/// DocShelf's Shelf theme: charcoal and cream with a calm sage accent. The app is always dark, so
+/// the light side of each colour is what a view set to the light appearance draws on paper.
 enum Theme {
-    static let background = NSColor(hex: 0x262625)
-    static let raised = NSColor(hex: 0x323230)
-    static let border = NSColor(hex: 0x3E3E3B)
-    static let text = NSColor(hex: 0xE4E5D8)
-    static let muted = NSColor(hex: 0x8C8C83)
-    static let accent = NSColor(hex: 0x9FB59A)
-    static let code = NSColor(hex: 0xD2A379)
+    static let background = NSColor(dark: 0x262625, light: 0xFFFFFF)
+    static let raised = NSColor(dark: 0x323230, light: 0xF1F1EC)
+    static let border = NSColor(dark: 0x3E3E3B, light: 0xD4D4CC)
+    static let text = NSColor(dark: 0xE4E5D8, light: 0x1F1F1E)
+    static let muted = NSColor(dark: 0x8C8C83, light: 0x66665F)
+    static let accent = NSColor(dark: 0x9FB59A, light: 0x47663F)
+    static let code = NSColor(dark: 0xD2A379, light: 0x8F5420)
 
     static func color(for token: CodeToken) -> NSColor {
         switch token {
-        case .keyword: NSColor(hex: 0xCF9BA6)
+        case .keyword: NSColor(dark: 0xCF9BA6, light: 0x9C3F57)
         case .type: accent
-        case .function: NSColor(hex: 0x8FB6C9)
+        case .function: NSColor(dark: 0x8FB6C9, light: 0x2B6480)
         case .string: code
-        case .number, .constant: NSColor(hex: 0xB9A6D6)
+        case .number, .constant: NSColor(dark: 0xB9A6D6, light: 0x634A94)
         case .comment: muted
-        case .meta: NSColor(hex: 0xC9B97F)
+        case .meta: NSColor(dark: 0xC9B97F, light: 0x77691F)
         }
     }
 
@@ -69,6 +70,11 @@ enum Theme {
 }
 
 extension NSColor {
+    convenience init(dark: UInt32, light: UInt32) {
+        let darkColor = NSColor(hex: dark), lightColor = NSColor(hex: light)
+        self.init(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? lightColor : darkColor }
+    }
+
     convenience init(hex: UInt32) {
         self.init(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
                   blue: CGFloat(hex & 0xFF) / 255, alpha: 1)

@@ -46,12 +46,15 @@ final class MarkdownRenderer {
         }
     }
 
-    /// Tables are measured against the column width, so they follow it when the window resizes.
+    /// Tables and images are measured against the column width, so they follow it when the window resizes.
     func columnWidthChanged() {
         guard layout.length == storage.length else { return }
         let text = storage.string as NSString
         for (index, marker) in layout.markers.enumerated() where !revealed.contains(index) {
-            if case .table = marker.kind { render(text.paragraphRange(for: marker.range)) }
+            switch marker.kind {
+            case .table, .image: render(text.paragraphRange(for: marker.range))
+            default: break
+            }
         }
     }
 
@@ -173,12 +176,16 @@ final class MarkdownRenderer {
             guard let image = image(for: source) else { return }
             collapseLine(of: clipped)
             storage.addAttribute(.dmImage, value: image, range: NSRange(location: clipped.location, length: 1))
-            let scale = min(1, Theme.columnWidth / max(image.size.width, 1))
+            let scale = min(1, column / max(image.size.width, 1))
             updateParagraph(in: clipped) { $0.paragraphSpacing = image.size.height * scale + 8 }
         case .table(let shape):
             hideTable(shape, range: clipped)
         }
         storage.addAttribute(.dmHidden, value: true, range: clipped)
+    }
+
+    private var column: CGFloat {
+        layoutManager.textContainers.first?.size.width ?? Theme.columnWidth
     }
 
     private func isRevealedTable(at location: Int) -> Bool {
@@ -192,7 +199,6 @@ final class MarkdownRenderer {
     private func hideTable(_ shape: TableShape, range: NSRange) {
         let style = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
         let indent = style?.headIndent ?? 0
-        let column = layoutManager.textContainers.first?.size.width ?? Theme.columnWidth
         let rows = shape.rows.enumerated().map { rowIndex, cells in
             cells.map { TableGrid.Cell(text: visibleText(of: $0, bold: rowIndex == 0), location: $0.location) }
         }
